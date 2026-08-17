@@ -14,7 +14,7 @@ function getSupabase() {
   return window.supabaseClient;
 }
 
-// Function to protect pages
+// Protected Page Authentication Check
 async function checkAuth() {
   const supabase = getSupabase();
   if (!supabase) return false;
@@ -44,7 +44,7 @@ let selectedRole = "student";
 let ticketQty = 1;
 let currentTicketPrice = 0;
 
-// Static Data
+// Static Events Data
 const events = [
   { id: 1, name: "HackFest 2026", emoji: "💡", type: "hackathon", club: "CodeCraft", date: "Sep 14, 2026", time: "9:00 AM", venue: "Main Auditorium", price: 199, seats: 48 },
   { id: 2, name: "Annual Theatre Night", emoji: "🎭", type: "event", club: "Drama & Theatre", date: "Sep 20, 2026", time: "6:30 PM", venue: "Open Air Stage", price: 0, seats: 200 },
@@ -52,12 +52,6 @@ const events = [
   { id: 4, name: "Battle of Bands", emoji: "🎸", type: "event", club: "Music Society", date: "Oct 5, 2026", time: "5:00 PM", venue: "College Grounds", price: 149, seats: 0 },
   { id: 5, name: "Robo Wars", emoji: "⚙️", type: "hackathon", club: "Robotics Club", date: "Oct 12, 2026", time: "10:00 AM", venue: "Engineering Block", price: 249, seats: 22 },
   { id: 6, name: "Photography Walk", emoji: "📸", type: "event", club: "Photography Club", date: "Oct 18, 2026", time: "7:00 AM", venue: "Campus Lake", price: 0, seats: 50 }
-];
-
-const reels = [
-  { id: 1, title: "HackFest Highlights 🔥", club: "CodeCraft", platform: "youtube", emoji: "💡", bg: "linear-gradient(135deg,#1a2035,#2d1b69)", views: "12k", ytId: "dQw4w9WgXcQ" },
-  { id: 2, title: "Theatre Night BTS", club: "Drama & Theatre", platform: "instagram", emoji: "🎭", bg: "linear-gradient(135deg,#1a2035,#4a1942)", views: "8.4k", ytId: null },
-  { id: 3, title: "Robo Wars Recap", club: "Robotics Club", platform: "youtube", emoji: "🤖", bg: "linear-gradient(135deg,#1a2035,#0c4a6e)", views: "21k", ytId: "dQw4w9WgXcQ" }
 ];
 
 // Initialization
@@ -76,7 +70,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await restoreSupabaseSession();
 
   renderEvents();
-  renderReels();
+  await loadReels(); // Dynamically load YouTube Shorts from Supabase
   renderTickets();
   initNavScroll();
   initSmoothLinks();
@@ -85,7 +79,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadNavUserProfile();
 });
 
-// Bind form submit listeners safely
+// Form submit listener bindings
 function bindFormEvents() {
   const loginForm = document.getElementById("loginForm");
   if (loginForm && !loginForm.hasAttribute("onsubmit")) {
@@ -103,13 +97,163 @@ function bindFormEvents() {
   }
 }
 
+// ---------------------------------------------
+// DYNAMIC SUPABASE REELS LOADER & POPUP PLAYER
+// ---------------------------------------------
+
+async function loadReels() {
+  const grid = document.getElementById("reelsGrid");
+  if (!grid) return;
+
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    const { data: reelsData, error } = await supabase
+      .from("reels")
+      .select("*")
+      .eq("is_active", true)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    renderReelsGrid(reelsData || []);
+  } catch (err) {
+    console.error("Error loading reels:", err);
+  }
+}
+
+// Unified Reels Grid Renderer (supports both video_url & yt_id schemas)
+function renderReelsGrid(list) {
+  const grid = document.getElementById("reelsGrid");
+  if (!grid) return;
+
+  if (!list || !list.length) {
+    grid.innerHTML = `
+      <div class="club-empty">
+        <strong>No reels available</strong>
+        <span>Post a new Short to display it here.</span>
+      </div>`;
+    return;
+  }
+
+  grid.innerHTML = list.map(reel => {
+    const title = reel.caption || reel.title || "Campus Reel";
+    const subtext = reel.club_name || "Campus Community";
+    const rawUrl = reel.video_url || "";
+    
+    // Extract video ID safely
+    let ytId = reel.yt_id || "";
+    if (!ytId && rawUrl) {
+      if (rawUrl.includes("shorts/")) {
+        ytId = rawUrl.split("shorts/")[1].split("?")[0].split("/")[0];
+      } else if (rawUrl.includes("v=")) {
+        ytId = rawUrl.split("v=")[1].split("&")[0];
+      } else if (rawUrl.includes("youtu.be/")) {
+        ytId = rawUrl.split("youtu.be/")[1].split("?")[0];
+      } else {
+        ytId = rawUrl;
+      }
+    }
+
+    return `
+      <div class="reel-card" onclick="openReel('${escapeJs(ytId)}', '${escapeJs(title)}')">
+        <div class="reel-thumb" style="background: linear-gradient(135deg,#1a2035,#2d1b69)">
+          <span>🎬</span>
+          <div class="reel-platform">▶️</div>
+          <div class="reel-play-btn">▶</div>
+        </div>
+        <div class="reel-info">
+          <strong>${escapeHtml(title)}</strong>
+          <small>${escapeHtml(subtext)}</small>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+let ytPlayer = null;
+
+// YouTube API callback function
+function onYouTubeIframeAPIReady() {
+  console.log("YouTube Player API Ready");
+}
+
+// Open modal and load video safely
+function openReel(ytId, title) {
+  if (!ytId) {
+    showToast("⚠️ Video ID missing", "error");
+    return;
+  }
+
+  // Update modal title
+  const titleEl = document.getElementById("ytModalTitle");
+  if (titleEl) titleEl.textContent = title;
+
+  // Show modal
+  const modal = document.getElementById("reelVideoModal");
+  if (modal) {
+    modal.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+  }
+
+  // Load video via YT Player instance or fallback to iframe embedding
+  if (ytPlayer && typeof ytPlayer.loadVideoById === "function") {
+    ytPlayer.loadVideoById(ytId);
+  } else if (window.YT && window.YT.Player) {
+    ytPlayer = new window.YT.Player("youtube-player-container", {
+      videoId: ytId,
+      playerVars: {
+        autoplay: 1,
+        rel: 0,
+        modestbranding: 1,
+        playsinline: 1
+      },
+      events: {
+        onReady: (event) => event.target.playVideo()
+      }
+    });
+  } else {
+    // Fallback if YouTube IFrame API has not finished loading
+    const container = document.getElementById("youtube-player-container");
+    if (container) {
+      container.innerHTML = `<iframe width="100%" height="100%" src="https://www.youtube.com/embed/${encodeURIComponent(ytId)}?autoplay=1&rel=0" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen style="width:100%; height:100%; border:none;"></iframe>`;
+    }
+  }
+}
+
+// Stop video playback and hide modal
+function closeReelPlayer() {
+  if (ytPlayer && typeof ytPlayer.stopVideo === "function") {
+    ytPlayer.stopVideo();
+  } else {
+    const container = document.getElementById("youtube-player-container");
+    if (container) container.innerHTML = "";
+  }
+  
+  const modal = document.getElementById("reelVideoModal");
+  if (modal) {
+    modal.classList.add("hidden");
+  }
+  document.body.style.overflow = "";
+}
+
+function closeReelModal(e) {
+  if (e.target.classList.contains("modal-overlay")) {
+    closeReelPlayer();
+  }
+}
+
+// ---------------------------------------------
+// CLUBS AND EVENTS LOGIC
+// ---------------------------------------------
+
 async function loadClubs() {
   const grid = document.getElementById("clubsGrid");
   try {
     const supabase = getSupabase();
     if (!supabase) return;
     
-    // Updated select query to join with profiles via foreign key leader_id
     const { data: clubsData, error: clubsError } = await supabase
       .from("clubs")
       .select(`
@@ -156,7 +300,6 @@ async function loadClubs() {
   }
 }
 
-// Render UI Components
 function renderClubFilters() {
   const container = document.getElementById("clubFilters");
   if (!container) return;
@@ -229,11 +372,11 @@ function renderEvents() {
           <span class="event-type-badge">${event.type}</span>
         </div>
         <div class="event-body">
-          <h3>${event.name}</h3>
+          <h3>${escapeHtml(event.name)}</h3>
           <div class="event-meta">
             <span>📅 ${event.date} · ${event.time}</span>
-            <span>📍 ${event.venue}</span>
-            <span>🏛️ ${event.club}</span>
+            <span>📍 ${escapeHtml(event.venue)}</span>
+            <span>🏛️ ${escapeHtml(event.club)}</span>
             <span style="color:${soldOut ? '#fb923c' : '#4ade80'}">
               ${soldOut ? '🔴 Sold Out' : `🟢 ${event.seats} seats left`}
             </span>
@@ -249,33 +392,6 @@ function renderEvents() {
   }).join("");
 }
 
-function renderReels() {
-  const grid = document.getElementById("reelsGrid");
-  if (!grid) return;
-
-  grid.innerHTML = reels.map(reel => `
-    <div class="reel-card" onclick="openReel('${reel.ytId || ""}', '${escapeJs(reel.title)}')">
-      <div class="reel-thumb" style="background:${reel.bg}">
-        <span>${reel.emoji}</span>
-        <div class="reel-platform">${reel.platform === "youtube" ? "▶️" : "📷"}</div>
-        <div class="reel-play-btn">▶</div>
-      </div>
-      <div class="reel-info">
-        <strong>${reel.title}</strong>
-        <small>${reel.club} · ${reel.views} views</small>
-      </div>
-    </div>
-  `).join("");
-}
-
-function openReel(ytId, title) {
-  if (!ytId) {
-    showToast("📸 Opening Instagram reel...");
-    return;
-  }
-  window.open(`https://www.youtube.com/watch?v=${ytId}`, "_blank");
-}
-
 function renderTickets() {
   const grid = document.getElementById("ticketsGrid");
   if (!grid) return;
@@ -285,13 +401,13 @@ function renderTickets() {
     return `
       <div class="ticket-card ${soldOut ? "sold-out" : ""}">
         <div>
-          <div class="ticket-event-name">${event.emoji} ${event.name}</div>
-          <span class="club-tag">${event.type}</span>
+          <div class="ticket-event-name">${event.emoji} ${escapeHtml(event.name)}</div>
+          <span class="club-tag">${escapeHtml(event.type)}</span>
         </div>
         <div class="ticket-details">
           <span>📅 ${event.date}</span>
-          <span>📍 ${event.venue}</span>
-          <span>🏛️ ${event.club}</span>
+          <span>📍 ${escapeHtml(event.venue)}</span>
+          <span>🏛️ ${escapeHtml(event.club)}</span>
         </div>
         <div class="ticket-footer">
           <div>
@@ -345,7 +461,7 @@ function handleTicketPurchase(event) {
   showToast(`✅ ${ticketQty} ticket(s) booked!`, "success");
 }
 
-// Tab Switching
+// Auth Handlers
 function switchAuthMode(mode) {
   const loginEl = document.getElementById('loginForm') || document.getElementById('loginSection');
   const signupEl = document.getElementById('signupForm') || document.getElementById('signupSection');
@@ -367,7 +483,6 @@ function switchAuthMode(mode) {
   }
 }
 
-// Unified Authentication Handlers
 async function handleSignUp(event) {
   if (event) event.preventDefault();
   const errorBox = document.getElementById('signupError');
@@ -397,17 +512,13 @@ async function handleSignUp(event) {
     if (error) throw error;
     if (!data.user) throw new Error("Account creation failed.");
 
-    const { error: profileError } = await supabase
-      .from("profiles")
-      .upsert({
-        id: data.user.id,
-        full_name: fullName,
-        email: email,
-        role: role,
-        updated_at: new Date().toISOString()
-      });
-
-    if (profileError) console.error("Profile sync warning:", profileError);
+    await supabase.from("profiles").upsert({
+      id: data.user.id,
+      full_name: fullName,
+      email: email,
+      role: role,
+      updated_at: new Date().toISOString()
+    });
 
     closeAllModals();
 
@@ -434,7 +545,6 @@ async function handleSignUp(event) {
     }
   }
 }
-const handleSignup = handleSignUp;
 
 async function handleSignIn(event) {
   if (event) event.preventDefault();
@@ -456,7 +566,6 @@ async function handleSignIn(event) {
     if (error) throw error;
 
     const user = data.user;
-    
     const { data: profile } = await supabase
       .from("profiles")
       .select("id, full_name, email, role")
@@ -510,7 +619,6 @@ async function handleSignIn(event) {
     }
   }
 }
-const handleLogin = handleSignIn;
 
 async function restoreSupabaseSession() {
   try {
@@ -531,7 +639,7 @@ async function restoreSupabaseSession() {
       id: user.id,
       email: user.email,
       name: profile?.full_name || user.user_metadata?.full_name || user.email.split("@")[0],
-      role: profile?.role || user.user_metadata?.role || "student"
+      role: profile?.role || user.user_metadata?.role || "non_club_member"
     };
 
     updateNavUser();
@@ -540,13 +648,31 @@ async function restoreSupabaseSession() {
   }
 }
 
-// Modal & UI Controllers
+// UI Utilities & Modals
 function openLogin() { openModal("loginModal"); }
 function closeLogin() { closeModal("loginModal"); }
 function openSignup() { openModal("signupModal"); }
 function closeSignup() { closeModal("signupModal"); }
 function switchToSignup() { switchModal("loginModal", "signupModal"); }
 function switchToLogin() { switchModal("signupModal", "loginModal"); }
+
+function openProfileModal() {
+  const modal = document.getElementById("profileModal");
+  if (modal) {
+    openModal("profileModal");
+  } else {
+    showToast("👤 Profile modal under construction", "info");
+  }
+}
+
+function openSettingsModal() {
+  const modal = document.getElementById("settingsModal");
+  if (modal) {
+    openModal("settingsModal");
+  } else {
+    showToast("⚙️ Settings modal under construction", "info");
+  }
+}
 
 function openModal(id) {
   closeAllModals();
@@ -575,7 +701,6 @@ function switchModal(from, to) {
   setTimeout(() => openModal(to), 10);
 }
 
-// Close modals when clicking outside
 window.addEventListener("click", (event) => {
   if (event.target.classList.contains("modal-overlay")) {
     closeAllModals();
@@ -596,7 +721,6 @@ async function logout() {
   showToast("👋 Logged out successfully");
   window.location.href = "account.html";
 }
-const handleLogout = logout;
 
 function updateNavUser() {
   const navAuth = document.getElementById("navAuth");
@@ -616,13 +740,11 @@ function updateNavUser() {
   }
 }
 
-// Toggle profile dropdown menu
 function toggleProfileMenu() {
   const menu = document.getElementById('profile-dropdown-menu');
   if (menu) menu.classList.toggle('show');
 }
 
-// Close dropdown when clicking outside
 window.addEventListener('click', function(e) {
   if (!e.target.closest('.profile-dropdown')) {
     const menu = document.getElementById('profile-dropdown-menu');
@@ -632,7 +754,6 @@ window.addEventListener('click', function(e) {
   }
 });
 
-// Render navbar menu based on role
 async function loadNavUserProfile() {
   const supabase = getSupabase();
   if (!supabase) return;
@@ -648,9 +769,7 @@ async function loadNavUserProfile() {
   if (!user) {
     if (nameDisplay) nameDisplay.textContent = 'Sign In';
     if (avatarDisplay) avatarDisplay.textContent = '?';
-    menuContainer.innerHTML = `
-      <a href="account.html">🔑 Sign In / Register</a>
-    `;
+    menuContainer.innerHTML = `<a href="account.html">🔑 Sign In / Register</a>`;
     return;
   }
 
@@ -690,7 +809,6 @@ async function loadNavUserProfile() {
   `;
 }
 
-// Global UI Navigation & Helper Utilities
 function scrollToSection(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
 }
