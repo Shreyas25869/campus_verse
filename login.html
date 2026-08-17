@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Account — CampusHub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="auth-page-body">
+
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- NAVBAR (Back to Home button removed) -->
+  <nav class="navbar">
+    <div class="nav-brand" onclick="window.location.href='index.html'">
+      <div class="brand-icon">⬡</div>
+      <span>Campus<strong>Hub</strong></span>
+    </div>
+  </nav>
+
+  <!-- AUTH CARD CONTAINER -->
+  <main class="auth-wrapper">
+    <div class="auth-card">
+      
+      <!-- TAB NAVIGATION (Sign Up shown first) -->
+      <div class="auth-tabs">
+        <button type="button" class="auth-tab active" id="tabSignup" onclick="switchAuthMode('signup')">Sign Up</button>
+        <button type="button" class="auth-tab" id="tabLogin" onclick="switchAuthMode('login')">Sign In</button>
+      </div>
+
+      <!-- SIGN UP FORM (Default View) -->
+      <div id="signupSection" class="auth-section">
+        <div class="auth-header">
+          <h2>Create an Account</h2>
+          <p>Join CampusHub to discover clubs, events, and campus news.</p>
+        </div>
+
+        <form id="signupForm" onsubmit="handleSignUp(event)">
+          <div class="form-group">
+            <label for="signupName">Full Name</label>
+            <input type="text" id="signupName" placeholder="Alex Morgan" required />
+          </div>
+
+          <div class="form-group">
+            <label for="signupEmail">Email Address</label>
+            <input type="email" id="signupEmail" placeholder="student@university.edu" required />
+          </div>
+
+          <div class="form-group">
+            <label for="signupPassword">Password</label>
+            <input type="password" id="signupPassword" placeholder="Create a strong password" required />
+          </div>
+
+          <div class="form-group">
+            <label for="signupStatus">Student Status</label>
+            <select id="signupStatus" class="auth-select" required>
+              <option value="" disabled selected>Select status</option>
+              <option value="club_member">Club Member</option>
+              <option value="non_club_member">Non-Club Member</option>
+            </select>
+          </div>
+
+          <div id="signupError" class="auth-alert hidden"></div>
+
+          <button type="submit" class="btn-primary btn-full">Create Account</button>
+        </form>
+      </div>
+
+      <!-- SIGN IN FORM (Role dropdown removed for auto-detection) -->
+      <div id="loginSection" class="auth-section hidden">
+        <div class="auth-header">
+          <h2>Welcome Back</h2>
+          <p>Enter your details to access your account.</p>
+        </div>
+
+        <form id="loginForm" onsubmit="handleSignIn(event)">
+          <div class="form-group">
+            <label for="loginEmail">Email Address</label>
+            <input type="email" id="loginEmail" placeholder="student@university.edu" required />
+          </div>
+
+          <div class="form-group">
+            <label for="loginPassword">Password</label>
+            <input type="password" id="loginPassword" placeholder="••••••••" required />
+          </div>
+
+          <div id="loginError" class="auth-alert hidden"></div>
+
+          <button type="submit" class="btn-primary btn-full">Sign In</button>
+        </form>
+      </div>
+
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="app.js"></script>
+</body>
+</html>
